@@ -15,6 +15,9 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
+const MAX_RETRIES = 2;
+const BATCH_SIZE = 5;
+
 export async function POST(req: Request) {
   if (!process.env.OPENAI_API_KEY) {
     return NextResponse.json(
@@ -33,32 +36,65 @@ export async function POST(req: Request) {
       );
     }
 
-    const prompt = `Generate a quiz about "${topic}" with exactly ${numQuestions} multiple choice questions at ${difficulty} difficulty level. 
-    
-Return a JSON object with a 'questions' array. The response should follow this exact structure:
-{
-  "questions": [
-    {
-      "question": "Question text here",
-      "options": ["Option 1", "Option 2", "Option 3", "Option 4"],
-      "correctAnswer": "The correct option text that matches exactly one of the options"
+    // For larger number of questions, generate them in batches
+    const totalQuestions = parseInt(numQuestions);
+    const batches = Math.ceil(totalQuestions / BATCH_SIZE);
+    let allQuestions: QuizQuestion[] = [];
+
+    for (let batch = 0; batch < batches; batch++) {
+      const questionsInBatch = Math.min(BATCH_SIZE, totalQuestions - batch * BATCH_SIZE);
+      const batchQuestions = await generateQuizBatch(topic, questionsInBatch, difficulty, batch + 1);
+      allQuestions = [...allQuestions, ...batchQuestions];
     }
-  ]
+
+    return NextResponse.json({ questions: allQuestions });
+  } catch (error) {
+    console.error('Error generating quiz:', error);
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : 'Failed to generate quiz. Please try again.' },
+      { status: 500 }
+    );
+  }
 }
 
-The difficulty levels should be interpreted as follows:
-- Easy: Basic knowledge and straightforward questions
-- Medium: Moderate complexity requiring good understanding
-- Hard: Complex questions requiring deep knowledge
-
-Important: The response must be a valid JSON object with a 'questions' array containing exactly ${numQuestions} questions.`;
-
+async function generateQuizBatch(
+  topic: string,
+  numQuestions: number,
+  difficulty: string,
+  batchNumber: number,
+): Promise<QuizQuestion[]> {
+  let retries = 0;
+  
+  while (retries <= MAX_RETRIES) {
     try {
+      const prompt = `Generate ${numQuestions} multiple choice questions about "${topic}" at ${difficulty} difficulty level.
+      
+Each question must be unique and follow this exact format:
+{
+  "question": "Clear, concise question text",
+  "options": ["Option 1", "Option 2", "Option 3", "Option 4"],
+  "correctAnswer": "The exact text of the correct option"
+}
+
+Requirements:
+- Questions should be appropriate for ${difficulty} difficulty
+- Each question must have exactly 4 options
+- The correctAnswer must exactly match one of the options
+- No duplicate questions or options
+- No markdown formatting or additional text
+
+Return a JSON object with this structure:
+{
+  "questions": [
+    // Array of question objects as specified above
+  ]
+}`;
+
       const completion = await openai.chat.completions.create({
         messages: [
           {
             role: "system",
-            content: "You are a quiz generator that always responds with valid JSON containing a 'questions' array. Format your response exactly as specified in the prompt."
+            content: "You are a quiz generator that creates clear, accurate questions. Always respond with valid JSON containing a questions array."
           },
           {
             role: "user",
@@ -76,19 +112,14 @@ Important: The response must be a valid JSON object with a 'questions' array con
         throw new Error('Empty response from OpenAI');
       }
 
-      // Parse the response
       const parsedResponse = JSON.parse(response) as QuizResponse;
       
-      // Ensure we have a questions array
       if (!parsedResponse.questions || !Array.isArray(parsedResponse.questions)) {
-        console.error('Invalid response format:', parsedResponse);
         throw new Error('Invalid response format: missing questions array');
       }
 
-      const questions = parsedResponse.questions;
-
-      // Validate the structure of each question
-      const validatedQuestions = questions.map((q: QuizQuestion, index: number) => {
+      // Validate questions
+      parsedResponse.questions.forEach((q, index) => {
         if (!q.question || !Array.isArray(q.options) || !q.correctAnswer) {
           throw new Error(`Invalid question format at index ${index}`);
         }
@@ -98,30 +129,18 @@ Important: The response must be a valid JSON object with a 'questions' array con
         if (!q.options.includes(q.correctAnswer)) {
           throw new Error(`Question ${index + 1} correct answer is not in options`);
         }
-        return {
-          question: q.question,
-          options: q.options,
-          correctAnswer: q.correctAnswer
-        };
       });
 
-      if (validatedQuestions.length !== parseInt(numQuestions)) {
-        throw new Error(`Expected ${numQuestions} questions but got ${validatedQuestions.length}`);
+      return parsedResponse.questions;
+    } catch (error) {
+      console.error(`Batch ${batchNumber} attempt ${retries + 1} failed:`, error);
+      retries++;
+      
+      if (retries > MAX_RETRIES) {
+        throw new Error(`Failed to generate questions batch ${batchNumber} after ${MAX_RETRIES} attempts`);
       }
-
-      return NextResponse.json({ questions: validatedQuestions });
-    } catch (parseError) {
-      console.error('Failed to parse OpenAI response:', parseError);
-      return NextResponse.json(
-        { error: 'Failed to generate valid quiz questions. Please try again.' },
-        { status: 500 }
-      );
     }
-  } catch (error) {
-    console.error('Error generating quiz:', error);
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Failed to generate quiz. Please try again.' },
-      { status: 500 }
-    );
   }
+
+  throw new Error('Failed to generate questions after all retries');
 } 
