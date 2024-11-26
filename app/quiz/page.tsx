@@ -4,9 +4,15 @@ import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { BrainCircuit, ChevronRight, Loader2, AlertCircle } from 'lucide-react';
 
+interface QuizQuestion {
+  question: string;
+  options: string[];
+  correctAnswer: string;
+}
+
 export default function QuizPage() {
   const [topic, setTopic] = useState('');
-  const [questions, setQuestions] = useState<any[]>([]);
+  const [questions, setQuestions] = useState<QuizQuestion[]>([]);
   const [currentQuestion, setCurrentQuestion] = useState(0);
   const [score, setScore] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -15,7 +21,6 @@ export default function QuizPage() {
   const [numQuestions, setNumQuestions] = useState('5');
   const [difficulty, setDifficulty] = useState('medium');
   const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
-  const [isCorrect, setIsCorrect] = useState<boolean | null>(null);
   const [correctSound] = useState(() => typeof Audio !== 'undefined' ? new Audio('/correct.mp3') : null);
   const [wrongSound] = useState(() => typeof Audio !== 'undefined' ? new Audio('/wrong.mp3') : null);
 
@@ -57,24 +62,19 @@ export default function QuizPage() {
   const handleAnswer = async (answer: string) => {
     setSelectedAnswer(answer);
     const correct = answer === questions[currentQuestion].correctAnswer;
-    setIsCorrect(correct);
     
     if (correct) {
       correctSound?.play();
+      setScore(score + 1);
     } else {
       wrongSound?.play();
     }
 
     await new Promise(resolve => setTimeout(resolve, 1500));
     
-    if (correct) {
-      setScore(score + 1);
-    }
-    
     if (currentQuestion + 1 < questions.length) {
       setCurrentQuestion(currentQuestion + 1);
       setSelectedAnswer(null);
-      setIsCorrect(null);
     } else {
       setGameState('result');
     }
@@ -87,7 +87,6 @@ export default function QuizPage() {
     setScore(0);
     setGameState('input');
     setSelectedAnswer(null);
-    setIsCorrect(null);
   };
 
   const getAnswerButtonClass = (option: string) => {
