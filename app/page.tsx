@@ -3,9 +3,11 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { BrainCircuit, ChevronRight, Play, X } from 'lucide-react';
+import { SignInButton, SignUpButton, UserButton, useUser } from "@clerk/nextjs";
 
 export default function Home() {
   const [showDemo, setShowDemo] = useState(false);
+  const { isSignedIn } = useUser();
 
   const closeModal = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -14,8 +16,36 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-black text-white">
+      {/* Navigation */}
+      <nav className="fixed top-0 left-0 right-0 z-50 bg-black/50 backdrop-blur-lg border-b border-zinc-800">
+        <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <BrainCircuit className="w-6 h-6 text-blue-500" />
+            <span className="font-semibold">Quiz AI</span>
+          </div>
+          <div className="flex items-center gap-4">
+            {!isSignedIn ? (
+              <>
+                <SignInButton mode="modal">
+                  <button className="text-zinc-300 hover:text-white">
+                    Sign In
+                  </button>
+                </SignInButton>
+                <SignUpButton mode="modal">
+                  <button className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg">
+                    Sign Up
+                  </button>
+                </SignUpButton>
+              </>
+            ) : (
+              <UserButton afterSignOutUrl="/" />
+            )}
+          </div>
+        </div>
+      </nav>
+
       {/* Hero Section */}
-      <div className="max-w-6xl mx-auto px-4 py-20">
+      <div className="max-w-6xl mx-auto px-4 py-32">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -30,15 +60,28 @@ export default function Home() {
           </p>
           
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <motion.button
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-4 rounded-lg font-semibold flex items-center justify-center gap-2"
-              onClick={() => window.location.href = '/quiz'}
-            >
-              Start Creating
-              <ChevronRight className="w-5 h-5" />
-            </motion.button>
+            {isSignedIn ? (
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-4 rounded-lg font-semibold flex items-center justify-center gap-2"
+                onClick={() => window.location.href = '/quiz'}
+              >
+                Start Creating
+                <ChevronRight className="w-5 h-5" />
+              </motion.button>
+            ) : (
+              <SignUpButton mode="modal">
+                <motion.button
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-4 rounded-lg font-semibold flex items-center justify-center gap-2"
+                >
+                  Get Started
+                  <ChevronRight className="w-5 h-5" />
+                </motion.button>
+              </SignUpButton>
+            )}
             
             <motion.button
               whileHover={{ scale: 1.05 }}

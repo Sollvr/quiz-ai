@@ -15,8 +15,11 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-const MAX_RETRIES = 2;
-const BATCH_SIZE = 5;
+// Reduced questions for faster response
+const MAX_QUESTIONS = 10;
+const TIMEOUT_MS = 8000; // 8 seconds timeout
+
+export const runtime = 'edge'; // Use edge runtime for better performance
 
 export async function POST(req: Request) {
   if (!process.env.OPENAI_API_KEY) {
@@ -36,40 +39,13 @@ export async function POST(req: Request) {
       );
     }
 
-    // For larger number of questions, generate them in batches
-    const totalQuestions = parseInt(numQuestions);
-    const batches = Math.ceil(totalQuestions / BATCH_SIZE);
-    let allQuestions: QuizQuestion[] = [];
+    // Limit maximum questions
+    const requestedQuestions = Math.min(parseInt(numQuestions), MAX_QUESTIONS);
+    
+    // Generate all questions in one request to avoid timeout issues
+    const prompt = `Generate ${requestedQuestions} multiple choice questions about "${topic}" at ${difficulty} difficulty level.
 
-    for (let batch = 0; batch < batches; batch++) {
-      const questionsInBatch = Math.min(BATCH_SIZE, totalQuestions - batch * BATCH_SIZE);
-      const batchQuestions = await generateQuizBatch(topic, questionsInBatch, difficulty, batch + 1);
-      allQuestions = [...allQuestions, ...batchQuestions];
-    }
-
-    return NextResponse.json({ questions: allQuestions });
-  } catch (error) {
-    console.error('Error generating quiz:', error);
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Failed to generate quiz. Please try again.' },
-      { status: 500 }
-    );
-  }
-}
-
-async function generateQuizBatch(
-  topic: string,
-  numQuestions: number,
-  difficulty: string,
-  batchNumber: number,
-): Promise<QuizQuestion[]> {
-  let retries = 0;
-  
-  while (retries <= MAX_RETRIES) {
-    try {
-      const prompt = `Generate ${numQuestions} multiple choice questions about "${topic}" at ${difficulty} difficulty level.
-      
-Each question must be unique and follow this exact format:
+Each question must follow this format:
 {
   "question": "Clear, concise question text",
   "options": ["Option 1", "Option 2", "Option 3", "Option 4"],
@@ -81,7 +57,7 @@ Requirements:
 - Each question must have exactly 4 options
 - The correctAnswer must exactly match one of the options
 - No duplicate questions or options
-- No markdown formatting or additional text
+- Keep questions and answers concise
 
 Return a JSON object with this structure:
 {
@@ -90,6 +66,10 @@ Return a JSON object with this structure:
   ]
 }`;
 
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
+
+    try {
       const completion = await openai.chat.completions.create({
         messages: [
           {
@@ -101,10 +81,12 @@ Return a JSON object with this structure:
             content: prompt
           }
         ],
-        model: "gpt-3.5-turbo",
+        model: "gpt-3.5-turbo-1106",
         temperature: 0.7,
-        response_format: { type: "json_object" }
+        response_format: { type: "json_object" },
       });
+
+      clearTimeout(timeoutId);
 
       const response = completion.choices[0].message.content;
       
@@ -131,16 +113,31 @@ Return a JSON object with this structure:
         }
       });
 
-      return parsedResponse.questions;
-    } catch (error) {
-      console.error(`Batch ${batchNumber} attempt ${retries + 1} failed:`, error);
-      retries++;
-      
-      if (retries > MAX_RETRIES) {
-        throw new Error(`Failed to generate questions batch ${batchNumber} after ${MAX_RETRIES} attempts`);
-      }
-    }
-  }
+      return NextResponse.json({ 
+        questions: parsedResponse.questions.slice(0, requestedQuestions)
+      });
 
-  throw new Error('Failed to generate questions after all retries');
+    } catch (error: unknown) {
+      clearTimeout(timeoutId);
+      
+      if (error instanceof Error && error.name === 'AbortError') {
+        return NextResponse.json(
+          { error: 'Request timed out. Please try with fewer questions.' },
+          { status: 408 }
+        );
+      }
+      throw error;
+    }
+
+  } catch (error: unknown) {
+    console.error('Error generating quiz:', error);
+    return NextResponse.json(
+      { 
+        error: error instanceof Error 
+          ? error.message 
+          : 'Failed to generate quiz. Please try again.'
+      },
+      { status: 500 }
+    );
+  }
 } 

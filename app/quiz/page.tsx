@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { BrainCircuit, ChevronRight, Loader2, AlertCircle } from 'lucide-react';
+import { UserButton } from '@clerk/nextjs';
 
 interface QuizQuestion {
   question: string;
@@ -108,7 +109,17 @@ export default function QuizPage() {
 
   return (
     <div className="min-h-screen bg-black text-white flex flex-col items-center justify-center p-4">
-      <div className="w-full max-w-2xl space-y-8">
+      <nav className="fixed top-0 left-0 right-0 z-50 bg-black/50 backdrop-blur-lg border-b border-zinc-800">
+        <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <BrainCircuit className="w-6 h-6 text-blue-500" />
+            <span className="font-semibold">Quiz AI</span>
+          </div>
+          <UserButton afterSignOutUrl="/" />
+        </div>
+      </nav>
+
+      <div className="w-full max-w-2xl space-y-8 mt-16">
         <header className="text-center space-y-2">
           <BrainCircuit className="w-16 h-16 mx-auto text-blue-500" />
           <h1 className="text-4xl font-bold tracking-tight">AI Quiz Generator</h1>
@@ -171,8 +182,6 @@ export default function QuizPage() {
               >
                 <option value="5">5 Questions</option>
                 <option value="10">10 Questions</option>
-                <option value="15">15 Questions</option>
-                <option value="20">20 Questions</option>
               </select>
             </div>
 
